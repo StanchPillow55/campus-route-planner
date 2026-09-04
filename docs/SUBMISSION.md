@@ -170,11 +170,10 @@ Do **not** submit only the tunnel if the agent VM may sleep — deploy to Vercel
 ```
 
 ### URL to PUBLIC code repo
-**YOU:** after making the GitHub repo public, paste:
 ```
-https://github.com/<your-username>/<your-repo>
+https://github.com/StanchPillow55/campus-route-planner
 ```
-Confirm MIT LICENSE is visible on the repo (About / root `LICENSE` file).
+Confirm the repo is **public**, MIT `LICENSE` shows in About, and it opens in an incognito window. If `main` is not on GitHub yet, push from a machine with GitHub auth (see `docs/DEPLOY.md`).
 
 ### Which agent(s) or client(s) did you test your WebMCP tools with?
 ```

@@ -38,11 +38,22 @@ npx netlify deploy --prod --dir=dist
 
 ## Public GitHub repo
 
-This workspace may start on a private Cursor remote. For Devpost you must publish a **public** repo with the MIT `LICENSE` visible:
+Canonical GitHub remote for Devpost:
 
-1. Click **Create repo** in Cursor (or create an empty public GitHub repo).  
-2. Push `main`.  
-3. Confirm `LICENSE` shows on the repo homepage.  
-4. Paste the public HTTPS GitHub URL into Devpost.
+```
+https://github.com/StanchPillow55/campus-route-planner
+```
 
-No API keys or auth are required for the demo.
+If this Cloud Agent workspace could not push (no GitHub credentials), run on your machine after Origin clone:
+
+```bash
+origin repo clone bradley-haraguchi/campus-route-planner
+cd campus-route-planner
+git remote add github https://github.com/StanchPillow55/campus-route-planner.git
+# or: git remote set-url --add --push origin https://github.com/StanchPillow55/campus-route-planner.git
+git push -u github main
+```
+
+Then set the GitHub repo to **Public**, confirm MIT `LICENSE` in About, and open the URL in an incognito window.
+
+This workspace may also track Origin separately (`origin` remote). Keep both if you want Cloud Agent + GitHub.
