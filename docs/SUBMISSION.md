@@ -31,6 +31,12 @@ Between classes, SJSU students constantly juggle the same scramble: grab coffee,
 
 Wildcat Mission Planner grew out of that gap—and from the idea that **WebMCP** should feel like a real product surface, not a decorative API. If an agent can call structured tools on the page, it should draft an inspectable campus mission while the student stays in control.
 
+## Why WebMCP fits this use case
+
+Campus missions are multi-constraint: places, minutes, and errands change together. Scraping buttons is fragile. WebMCP lets the page expose **product verbs** with JSON Schema—`get_trip_context`, `search_campus_places`, `draft_campus_route`, `get_walking_directions`—so agents act on the same state the student sees.
+
+**People + agents together:** the student owns preferences and final approval; the agent owns search + sequencing. Tool runs are visible in the Agent activity panel. A draft never becomes final without **Approve plan**.
+
 ## What it does
 
 A student sets:
