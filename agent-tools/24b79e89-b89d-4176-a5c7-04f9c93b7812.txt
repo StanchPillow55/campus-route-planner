@@ -1,0 +1,485 @@
+# WebMCP in 2026: The API Moved and Most Guides Are Wrong
+
+> WebMCP lets a web page hand its own tools to an AI agent in the browser. The API moved from navigator.modelContext to document.modelContext mid-2026, Chrome is running an origin trial through version 156, and almost every tutorial online still shows the deprecated call.
+
+Source: https://mcpplaygroundonline.com/blog/what-is-webmcp
+Author: Nikhil Tiwari
+Published: 2026-08-27
+Category: Development
+Reading time: 11 min read
+
+---
+
+TL;DR
+
+- WebMCP lets a web page register tools directly with a browser AI agent. No server, no API key, no backend.
+- The API moved from `navigator.modelContext` to `document.modelContext`. Chrome 150 deprecated the old spelling.
+- It is a W3C Draft Community Group Report (last published 26 August 2026), not a ratified standard.
+- Chrome runs a public origin trial from version 149 through 156. Edge is behind a flag. Firefox and Safari have not committed.
+- webmcp.dev is the old proposal, and its author says so. It is not W3C compliant.
+- Your existing MCP server is unaffected. Test it here either way.
+
+I went looking for the current state of WebMCP and found a mess.
+
+Half the tutorials show `navigator.modelContext`. Chrome deprecated that in version 150.
+
+Another chunk point at webmcp.dev as the reference implementation. Its own author has since disowned it as the standard.
+
+So here is what is actually true in August 2026, checked against the spec and Chrome's own docs.
+
+If you are about to add WebMCP tools to a production site, read the browser support and security sections first. They are the two places where a working demo turns into a bad afternoon.
+
+Table of Contents
+
+1. What Is WebMCP?
+2. WebMCP vs MCP: What Is Actually Different
+3. The Breaking Change Most Guides Missed
+4. The Current WebMCP API
+5. Which Browsers Support WebMCP?
+6. The WebMCP Security Model
+7. Is webmcp.dev Still Worth Using?
+8. Adoption: A Standard Without Users
+9. Should You Ship WebMCP Tools Today?
+10. FAQ
+
+## What Is WebMCP?
+
+WebMCP is a proposed web API that lets a page hand its own functions to an AI agent running in the browser.
+
+The technical name is `document.modelContext`. You call `registerTool()` and the agent can now invoke that JavaScript function.
+
+Think of the page itself as an MCP server whose tools happen to be implemented in client-side script instead of on a backend.
+
+That framing matters. There is no HTTP endpoint, no OAuth flow, and no deployment. The tool is a closure with access to your existing frontend state.
+
+It is developed in the W3C Web Machine Learning Community Group, edited by engineers from Google and Microsoft. The current text is a Draft Community Group Report published 26 August 2026.
+
+Draft Community Group Report is not a W3C Standard. WebMCP is not on the W3C Recommendation track. It is incubation, and the repository carries over 100 open issues.
+
+## WebMCP vs MCP: What Is Actually Different
+
+The names collide badly. WebMCP is not a new version of MCP, and it does not replace anything you have built.
+
+If you need the base protocol first, start with what the Model Context Protocol is.
+
+MCP
+
+Tools run on a server you host
+
+Any MCP client
+Claude, Cursor, a cron job, CI
+
+▼  JSON-RPC over HTTP
+
+your-app.com/mcp
+
+▼
+
+Your database and APIs
+
+Reachable any time, by any client, with its own auth.
+
+WebMCP
+
+Tools run inside the open tab
+
+your-app.com
+
+document.modelContext
+
+search_products add_to_cart
+
+AI
+
+Browser agent, calling in-page
+
+Exists only while that tab is open, using the session already there.
+
+MCP exposes tools over the network. WebMCP exposes them from inside the page the user already has open.
+
+ 
+
+MCP
+
+WebMCP
+
+Where tools run
+
+A server you host
+
+The page in the user's tab
+
+Transport
+
+JSON-RPC over stdio or HTTP
+
+A browser API, no network hop
+
+Auth
+
+OAuth, tokens, API keys
+
+The user's existing session cookie
+
+Who can call it
+
+Any MCP client, anywhere
+
+Only an agent on that open page
+
+Status
+
+Shipping, spec at 2026-07-28
+
+Origin trial in one browser
+
+The reach difference is the whole story. An MCP server works for any client that knows its URL, including scheduled jobs and CI.
+
+A WebMCP tool only exists while somebody has your tab open. That is a feature for personal workflows and a hard ceiling for automation.
+
+If you are weighing surfaces more broadly, my MCP vs function calling vs REST API comparison covers the trade-offs.
+
+## The Breaking Change Most Guides Missed
+
+Here is the part that will waste your time if nobody tells you.
+
+The API originally lived on `navigator`. The July 2026 draft moved it to `document.modelContext`, on the reasoning that tools belong to a document, not to the browser.
+
+Chrome 150 deprecated `navigator.modelContext` while the origin trial still ships both. So old code keeps working, quietly, until it does not.
+
+An earlier shape is gone entirely. The `provideContext()` and `clearContext()` methods from the first drafts were removed in March 2026.
+
+If a tutorial shows `provideContext()`, it is at least five months stale. Close the tab.
+
+WebMCP API timeline
+
+Chrome 146
+
+Feb 2026
+
+Ships in Canary on `navigator.modelContext`.
+
+—
+
+Mar 2026
+
+`provideContext()` and `clearContext()` removed from the draft.
+
+Chrome 149
+
+May 2026
+
+Public origin trial opens. Ship to real users with a token.
+
+—
+
+Jul 2026
+
+Draft relocates the API to `document.modelContext`.
+
+Chrome 150
+
+Jul 2026
+
+`navigator.modelContext` deprecated. Both still ship.
+
+Chrome 153
+
+Aug 2026
+
+Unregistering a tool no longer kills in-flight executions.
+
+Chrome 156
+
+TBD
+
+Origin trial ends. Ship it, extend it, or pull it.
+
+Two API shapes have already been retired. Anything written before July 2026 targets the wrong object.
+
+Feature-detect rather than assume:
+
+```
+// Prefer document, fall back to the deprecated location
+const mc = document.modelContext ?? navigator.modelContext;
+
+if (!mc) {
+  // No WebMCP here. Degrade to your normal UI.
+  return;
+}
+
+```
+
+## The Current WebMCP API
+
+`ModelContext` extends `EventTarget` and exposes three methods plus one event.
+
+### registerTool()
+
+This is the method you will use 95% of the time. It takes a tool descriptor and returns a promise.
+
+```
+await document.modelContext.registerTool({
+  name: 'search_products',
+  description: 'Search the catalog and return matching products.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'Search terms' },
+      maxResults: { type: 'number' }
+    },
+    required: ['query']
+  },
+  annotations: {
+    readOnlyHint: true,
+    untrustedContentHint: true
+  },
+  execute: async ({ query, maxResults }, { signal }) => {
+    const results = await searchCatalog(query, maxResults, { signal });
+    return JSON.stringify(results);
+  }
+});
+
+```
+
+The required fields are `name`, `description` and `execute`. Names are 1 to 128 characters, alphanumeric plus `_`, `-` and `.`.
+
+`execute` resolves to a string, not to an MCP-style content array. It receives an `AbortSignal` so a user can cancel a running tool.
+
+The `description` and `inputSchema` are the entire contract the model reads. This is the same trap that sinks server-side tools — I wrote about why most MCP tool descriptions are broken and every point applies here.
+
+### Unregistering with AbortSignal
+
+There is no `unregisterTool()`. You abort a controller instead, which fits single-page apps that swap tools per route.
+
+```
+const controller = new AbortController();
+
+await document.modelContext.registerTool(tool, {
+  signal: controller.signal
+});
+
+// Route change: the tool disappears from the agent
+controller.abort();
+
+```
+
+As of Chrome 153 an unregister no longer kills in-flight executions. Before that, aborting mid-call broke the running tool.
+
+### getTools() and executeTool()
+
+`getTools()` lists registered tools, and `executeTool()` invokes one. These exist for the agent side, not usually for your page.
+
+```
+const tools = await document.modelContext.getTools();
+
+const all = await document.modelContext.getTools({
+  fromOrigins: ['https://partner.example']
+});
+
+```
+
+A `toolchange` event fires when the set changes, so an agent UI can refresh its list.
+
+### The declarative form API
+
+You can turn an existing HTML form into a tool with attributes alone. No JavaScript at all.
+
+```
+<form toolname="supportRequestTool"
+      tooldescription="Submit a request for support."
+      action="/submit">
+  <input type="text" name="firstName">
+  <select name="team" required
+    toolparamdescription="Determines which team handles this.">
+    <option value="returns">Return my purchase</option>
+    <option value="shipping">Check my package</option>
+  </select>
+  <button type="submit">Submit</button>
+</form>
+
+```
+
+The browser derives a JSON Schema from the form fields. Add `toolautosubmit` and the agent can submit without a click.
+
+Be careful here. The spec text for the declarative API is still a TODO — only an explainer exists — so the attribute names can move.
+
+## Which Browsers Support WebMCP?
+
+Short answer: one, and only behind an origin trial.
+
+Browser
+
+Status
+
+Versions
+
+Notes
+
+Chrome
+
+Origin trial
+
+149 – 156
+
+Landed in 146 Canary, Feb 2026. Local testing via `chrome://flags/#enable-webmcp-testing`.
+
+Edge
+
+Behind a flag
+
+Experimental
+
+Microsoft co-edits the spec, so shipping is the likely outcome.
+
+Firefox
+
+No commitment
+
+—
+
+Engaged in spec discussion, no implementation signalled.
+
+Safari
+
+No commitment
+
+—
+
+Present in the conversation, absent from the roadmap.
+
+WebMCP browser support as of August 2026. One implementation, and it is time-boxed.
+
+An origin trial means you can enable it for real users on your own domain, with a token, for a bounded number of releases.
+
+It also means the API can change under you before it ships for good. The `navigator` to `document` move already proved that.
+
+## The WebMCP Security Model
+
+This is where WebMCP gets genuinely uncomfortable, and it deserves more attention than it gets.
+
+Your tools run with the user's live session. The agent is already logged in as them, because it is their tab.
+
+So a prompt-injected agent inherits everything the user can do. A page it visited earlier can carry instructions into the tool call it makes on yours.
+
+The spec gives you three real controls:
+
+1. Origin isolation. WebMCP only works in origin-isolated documents. Set `Origin-Agent-Cluster: ?0` and the API disappears.
+2. Permissions Policy. The `tools` feature defaults to `self`. A cross-origin iframe needs an explicit `allow="tools"`.
+3. `exposedTo`. Pass an array of origins at registration to scope who may see and call a tool.
+
+Use `annotations` honestly too. Mark read-only tools `readOnlyHint: true`, and flag anything returning user-generated text as `untrustedContentHint: true`.
+
+Do not register a destructive tool because it demos well. "Delete account" and "place order" behind a single agent call is a prompt injection away from a support ticket. Keep a human in the loop for anything irreversible.
+
+The threat model is the same one that hits server-side tools. My guide on safeguarding MCP servers from prompt injection transfers almost line for line.
+
+And if you already run an MCP server alongside your site, scan your MCP server against the OWASP MCP Top 10 while you are thinking about this.
+
+## Is webmcp.dev Still Worth Using?
+
+Plenty of search results still send you to webmcp.dev. It is worth knowing what that project is.
+
+It is Jason McGhee's original WebMCP proposal: a drop-in script that exposes `registerTool`, `registerPrompt` and `registerResource`, then bridges the page to a desktop MCP client over a localhost WebSocket.
+
+On 12 February 2026 the repository added a note calling it "an early WebMCP proposal / implementation" and pointing at the W3C group. It states plainly that it is not compliant with the W3C spec.
+
+So: fine as a proof of concept, and genuinely useful if you want tools in Claude Desktop today without waiting on browsers. Wrong thing to build a product on.
+
+The address that matters now is github.com/webmachinelearning/webmcp.
+
+## Adoption: A Standard Without Users
+
+Now the awkward part. Almost nobody consumes WebMCP tools yet.
+
+A July 2026 ecosystem review put it bluntly: WebMCP is "a standard with everything except users." Named origin-trial participants reportedly include Expedia, Booking.com and Shopify, but measured deployment sits near zero.
+
+No mainstream agent reads these tools today. Not Claude, not ChatGPT, not Gemini, not Perplexity. Google has said Gemini in Chrome will be the reference consumer when it ships.
+
+That is a classic two-sided bootstrap. Sites will not register tools until agents call them, and agents will not call them until sites register them.
+
+A telling detail from the same review: validator and checker extensions currently outnumber real implementations. The tooling arrived before the use case.
+
+Contrast that with plain MCP, where servers are being adopted as a buying criterion for SaaS right now.
+
+## Should You Ship WebMCP Tools Today?
+
+My read, split by situation.
+
+Ship it if your product is a browser-first workflow tool, your users already live in Chrome, and three to five tools would remove real clicking. The cost is an afternoon.
+
+Wait if you need agent access from anywhere, your users are on Safari or Firefox, or your tools touch money, deletion or personal data.
+
+In every case, build the MCP server first. It works today, across every client, and the tool definitions carry over almost unchanged.
+
+That ordering also protects you. If the WebMCP surface shifts again, your server keeps working. Our 2026-spec build guide covers the stateless transport end to end.
+
+A reasonable hedge: write your tool logic once as plain functions, then register it twice. Once through your MCP server, once through `document.modelContext`.
+
+## How MCP Playground Helps
+
+MCP Playground tests the half of this that actually works in production today: your MCP server.
+
+Connect any remote endpoint in the browser, run it against 70+ models, and watch the exact arguments each one sends to each tool. No install, no API key.
+
+That matters for WebMCP too, because the descriptions and schemas you validate on the server are the same ones you will paste into `registerTool()`.
+
+Test any MCP server free and see whether a model picks the right tool before you expose it to an agent in a browser tab.
+
+## Frequently Asked Questions
+
+Is WebMCP a W3C standard? No. It is a Draft Community Group Report from the Web Machine Learning Community Group, last published 26 August 2026. It is not on the W3C Recommendation track.
+
+Do I have to change navigator.modelContext in my code? Yes. Chrome 150 deprecated it in favour of `document.modelContext`. The origin trial still ships both, so feature-detect and prefer `document`.
+
+Does WebMCP replace my MCP server? No. WebMCP tools only exist while a user has your page open. A server serves any client at any time, including background jobs.
+
+Which browsers support WebMCP? Chrome, via an origin trial spanning versions 149 to 156. Edge has it behind a flag. Firefox and Safari have made no commitment.
+
+Can Claude or ChatGPT call WebMCP tools? Not today. No mainstream agent consumes them yet. Gemini in Chrome is expected to be the first.
+
+Is webmcp.dev the official implementation? No. It is the original proposal and its author states it is not W3C compliant. Use the Web Machine Learning repository instead.
+
+## Conclusion
+
+WebMCP is a good idea in an early, moving state. The API relocated to `document.modelContext`, one browser implements it behind an origin trial, and no popular agent calls these tools yet.
+
+That makes it worth a prototype and a feature detect, not a rewrite. Register a couple of read-only tools, keep destructive actions behind a human, and check back when Gemini in Chrome ships.
+
+Meanwhile the tool contract is the thing that carries over either way — so get that right on the server first.
+
+Test any MCP server free, then scan it before an agent ever touches it.
+
+## Frequently asked questions
+
+### Is WebMCP a W3C standard?
+
+Not yet. WebMCP is a Draft Community Group Report from the W3C Web Machine Learning Community Group, last published on 26 August 2026 and edited by engineers from Google and Microsoft. A Community Group Report is an incubation document, not a W3C Recommendation, and WebMCP is not currently on the W3C Standards Track. The specification repository still carries over 100 open issues covering unresolved questions such as multimodal input and output, streaming, cross-document tool responses, and schema validation.
+
+### Do I have to change navigator.modelContext in my code?
+
+Yes. The API moved from navigator.modelContext to document.modelContext in the July 2026 draft, on the reasoning that tools belong to a document rather than to the browser as a whole. Chrome 150 deprecated the navigator location while the origin trial continues to ship both, so existing code keeps working for now. The safe pattern is to feature-detect and prefer document.modelContext, falling back to navigator.modelContext only if it exists. An older shape is gone entirely: the provideContext() and clearContext() methods from the first drafts were removed in March 2026.
+
+### Does WebMCP replace my MCP server?
+
+No. They solve different problems. A WebMCP tool is JavaScript registered by a page, so it only exists while a user has that page open in a supporting browser, and it runs with the user session already present in that tab. An MCP server is reachable by any client at any time, including scheduled jobs, CI pipelines, and desktop assistants, and it carries its own authentication. If you want agent access to your product at all, build the MCP server first: the tool names, descriptions, and JSON Schemas carry over to WebMCP almost unchanged.
+
+### Which browsers support WebMCP?
+
+Chrome is the only browser with a working implementation. It landed in Chrome 146 Canary in February 2026 and is in a public origin trial spanning Chrome 149 through 156, with local testing available via the chrome://flags/#enable-webmcp-testing flag. Microsoft Edge has experimental support behind a flag, which is expected given Microsoft co-edits the specification. Firefox and Safari are engaged in the spec discussions but have not committed to implementation timelines.
+
+### Can Claude or ChatGPT call WebMCP tools today?
+
+No. As of August 2026 no mainstream agent consumes WebMCP tools, including Claude, ChatGPT, Gemini, and Perplexity. Google has said that Gemini in Chrome will be the reference implementation when it ships. This creates a two-sided bootstrapping problem: sites will not register tools until agents call them, and agents will not call them until sites register them. Reported origin trial participants include Expedia, Booking.com, and Shopify, but measured deployment across the web remains near zero.
+
+### What are the main security risks with WebMCP?
+
+WebMCP tools execute with the privileges of the user session already open in the tab, so a prompt-injected agent inherits everything the user can do. The specification provides three controls: WebMCP is only available in origin-isolated documents and is disabled if Origin-Agent-Cluster: ?0 is set; access is gated by a tools Permissions Policy feature that defaults to self, so cross-origin iframes need an explicit allow="tools" attribute; and the exposedTo option on registerTool scopes a tool to a specific array of origins. Beyond that, use the readOnlyHint and untrustedContentHint annotations honestly, and keep irreversible actions such as deletions and payments behind explicit human confirmation.
+
+### Is webmcp.dev the official WebMCP implementation?
+
+No. webmcp.dev hosts Jason McGhee's original WebMCP proposal, a drop-in script that exposes registerTool, registerPrompt, and registerResource and bridges the page to a desktop MCP client over a localhost WebSocket. On 12 February 2026 the repository added a note describing it as an early WebMCP proposal and stating explicitly that the implementation is not compliant with the W3C spec, pointing readers to the W3C Web Machine Learning Community Group instead. It remains a useful proof of concept for connecting a page to Claude Desktop today, but it is not the standard.
+
+---
+
+Canonical page: https://mcpplaygroundonline.com/blog/what-is-webmcp — MCP Playground (mcpplaygroundonline.com), the free browser-based tool for testing MCP servers and building AI agents.

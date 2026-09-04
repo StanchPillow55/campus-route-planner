@@ -1,0 +1,247 @@
+What Is WebMCP? Your Website's API for AI Agents | No Hacks
+
+Updated August 10, 2026 (originally published February 11, 2026)15 min read
+
+# What Is WebMCP? Your Website's API for AI Agents
+
+AI AgentsWebMCPChromeModel Context ProtocolAgentic WebAgentic Browsers
+
+AUTHOR
+
+Slobodan "Sani" Manic
+
+No Hacks
+
+CXL-certified conversion specialist and WordPress Core Contributor helping companies optimise websites for both humans and AI agents.
+
+No Hacks runs no sponsorships and is funded by advisory and audit work.
+
+WebMCP(Web Model Context Protocol) is a W3C browser standard that lets a website expose its own features to AI agents as structured, callable tools, through the`document.modelContext` API. Instead of an agent taking a screenshot of your page and guessing where to click, your website hands it a list of the things it can do and the exact parameters each one needs. It inverts the control: the website tells the agent what's possible, rather than the agent reverse-engineering your interface. Authored by engineers from Google and Microsoft through the W3C Web Machine Learning Community Group and first announced on February 10, 2026, WebMCP is now in a public origin trial in Chrome 149.
+
+When I first wrote about Chrome becoming an AI agent, Gemini could already scroll, click, and fill forms autonomously. That was the first half of the agentic-Chrome story: agents getting better at pretending to be human. WebMCP is the second half, and it's the more interesting one, because it stops the pretending entirely.
+
+Updated August 10, 2026: The tool-registration getter moved from`navigator.modelContext` to`document.modelContext`. Chrome 150 deprecated the old name and kept it as an alias, so existing code still runs and the change is easy to miss. Adds a section on the rename, and updates the status section for Shopify and Cloudflare making WebMCP default-on across a large share of commerce in August.
+
+Updated June 9, 2026: WebMCP moved from a Chrome 146 flag preview to a public origin trial running Chrome 149 through 156. Corrected the unverified "Edge ships native WebMCP" claim (it isn't in Microsoft's official Edge 147 release notes), added WebMCP-vs-MCP-vs-llms.txt and browser-support comparison tables, added John Mueller's endorsement of WebMCP over llms.txt, and documented the four-tool WebMCP implementation now running on No Hacks.
+
+---
+
+## Contents
+
+- The problem with agents clicking buttons
+- What WebMCP actually is
+- Two ways to expose tools
+- Human in the loop, by design
+- Where WebMCP stands now
+- The API moved from navigator to document
+- WebMCP vs MCP vs llms.txt
+- Which browsers support WebMCP?
+- What this means for website owners
+
+GET WEEKLY WEB STRATEGY TIPS FOR THE AI AGE
+
+Practical strategies for making your website work for AI agents and the humans using AI to find you. Once a week you get the new articles, the latest podcast episode, and a few links worth keeping.
+
+Subscribe
+
+## The problem with agents clicking buttons
+
+Current agentic browsing works through visual UI automation. Chrome's auto browse uses Gemini to "see" web pages and interact with them the way a human would. Click this button. Fill this form. Scroll down. Look for the checkout link. Other agentic browsers also do a version of this.
+
+It works. It's also so very fragile.
+
+Every time you redesign your website, change a button label, or rearrange its layout, agents relying on visual cues have to re-learn the interface. It's the same brittleness that plagued web scrapers for two decades (any Beautiful Soup fans here?), now applied to AI. The web UI was designed for human eyes and human hands. Forcing agents to navigate it visually is working against the grain of the medium. It CAN work. Very often, it will not.
+
+WebMCP takes a different approach entirely. Instead of making agents better at pretending to be humans, it lets websites speak to agents in their native language: structured data with defined schemas.
+
+## What WebMCP actually is
+
+WebMCP is MCP for the browser tab.
+
+If you've been following along with my coverage of the Model Context Protocol, you know MCP is the universal adapter that connects AI agents to tools and data sources. MCP servers run on backend infrastructure, exposing tools that AI systems can call.
+
+WebMCP brings that same model to client-side JavaScript. Your website becomes the MCP server. Tools are defined and executed right in the browser, no backend required.
+
+The proposal comes from the W3C Web Machine Learning Community Group, authored by engineers from Microsoft and Google, and was first announced on February 10, 2026. It's being developed as an open web standard, not a Chrome-exclusive feature. And it's explicitly model-agnostic: it works with any AI agent, whether the agent is powered by Gemini, Claude, ChatGPT, or something open-source.
+
+Here's the core idea, and it's worth saying plainly because it's the conceptual breakthrough: WebMCP inverts the control. Today the agent has to figure out what your website can do. With WebMCP, your website tells the agent what it can do. A website registers tools using the`document.modelContext` API, with each tool's inputs and outputs described by a JSON Schema. (If you have seen`navigator.modelContext` in older write-ups, including earlier versions of this one, see the rename below.)
+
+```
+document.modelContext.registerTool({
+  name: 'searchFlights',
+  description: 'Search available flights by route and date',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      origin: { type: 'string', description: 'Departure airport code' },
+      destination: { type: 'string', description: 'Arrival airport code' },
+      date: { type: 'string', description: 'Travel date' }
+    },
+    required: ['origin', 'destination', 'date']
+  },
+  execute: async (params) => {
+    const results = await searchFlightsAPI(params)
+    return { content: [{ type: 'text', text: JSON.stringify(results) }] }
+  }
+})
+
+```
+
+An AI agent visiting this page doesn't need to find the search form, figure out which fields to fill, or guess at the submit button. It discovers the`searchFlights` tool, reads the JSON Schema, calls the function with the right parameters, and gets structured data back. The whole interaction replaces dozens of screenshot-capture-interpret-click cycles with one structured tool call.
+
+No DOM scraping. No layout guessing. A clean, agreed rule for how a website and an agent talk to each other.
+
+## Two ways to expose tools
+
+WebMCP offers two approaches, and you can use both on the same page.
+
+The JavaScript API (shown above) is the most powerful approach. You register tools programmatically, define schemas, and provide execute functions. Full control over inputs, outputs, and the logic in between.
+
+The HTML form approach is declarative. You annotate existing` ` elements with new attributes:
+
+```
+<form toolname="searchFlights"
+      tooldescription="Search available flights by route and date">
+  <input name="origin" type="text" required />
+  <input name="destination" type="text" required />
+  <input name="date" type="date" required />
+  <button type="submit">Search</button>
+</form>
+
+```
+
+These two remind me of Schema.org and microdata.
+
+The browser translates form fields into tool schemas automatically. When an agent invokes the tool, the browser pre-fills the form and (by default) waits for the user to click submit. Adding a`toolautosubmit` attribute allows the agent to submit directly.
+
+The form approach is the one worth paying attention to. It builds on existing HTML. If your website already has well-structured forms with proper labels and input types, you're most of the way to a WebMCP implementation. Add a few attributes and your human-facing forms double as agent-facing tools.
+
+## Human in the loop, by design
+
+WebMCP doesn't hand full control to agents. The security model is browser-mediated.
+
+Tool calls go through the browser, not directly from agent to page. Users can review which tools an agent is accessing. Forms require manual submission by default. The API includes`agent.requestUserInteraction()` for cases where a tool needs explicit user confirmation mid-execution. And tool calls execute sequentially, preventing agents from firing off dozens of actions simultaneously.
+
+There's also a useful detail for developers:`SubmitEvent.agentInvoked` is a boolean flag that tells your form handler whether the submission came from an AI agent or a human. You can return structured data to agents while keeping the normal form flow for humans. Same form, different response paths.
+
+CSS pseudo-classes (`:tool-form-active` on forms,`:tool-submit-active` on submit buttons) let you visually indicate when an agent is interacting with an element. Your users can see what the agent is doing, which builds trust in the whole interaction.
+
+## Where WebMCP stands now
+
+WebMCP has graduated from a behind-a-flag prototype into a public origin trial that runs from Chrome 149 through Chrome 156. This is the part that's moved fastest since WebMCP first appeared. The Chromium "Intent to Experiment" was filed on May 15, 2026 and approved three days later. An origin trial means you can register your origin and run WebMCP on real users in production, not just on your own machine behind`chrome://flags`. The sole agent consuming those tools today is Gemini in Chrome.
+
+On the cross-browser question, be careful what you believe. Plenty of secondary write-ups claim Microsoft Edge 147 has native WebMCP support. I checked Microsoft's own Edge 147 web-platform release notes (April 9, 2026), and WebMCP is not in them, while the other on-device AI APIs of the moment (Prompt, Writer, Rewriter, Proofreader, WebNN) are. So treat Edge support as unconfirmed for now. What is verifiable, and still meaningful, is that Microsoft co-authored the spec alongside Google through the W3C. A second browser vendor helping write the standard is a real signal about its direction. A second browser releasing it is not yet a fact.
+
+The endorsements are starting too. Answering a Reddit thread in June 2026, Google's John Mueller called the rival llms.txt file "purely speculative for now (the file has existed for years, yet none of the AI systems use it)," and said he likes "the WebMCP approach, as well as the commerce integrations" because "they have clear goals & processes" (reported by Search Engine Journal). When a Google Search advocate steers people toward the capability layer over the identity file, that's a signal about where the platform thinks the value is.
+
+Then August happened, and "opt-in" stopped being the whole story. On August 5, Shopify switched WebMCP on for every Liquid storefront and the Hydrogen developer preview: catalog search, cart management, checkout and policy lookup, exposed as callable tools, with nothing to install and no merchant asked. A day later, Cloudflare made it available to any website behind Cloudflare with no code change and no origin change. Between them, a large share of the commerce web went from "a website could expose tools" to "this website already does."
+
+The demand side has not caught up with that. Agent support is still limited to Chromium browsers through the origin trial, and the consumer agent actually calling these tools remains Gemini in Chrome. Which is the honest shape of it: the supply of agent-callable tools grew enormously in one week, and the population of agents calling them did not.
+
+It is still early in the ways that matter. Community Group draft status, a narrow set of consuming agents, and an API name that moved twice in six months are all real constraints. But "default-on across a large share of commerce, in an origin trial you can run on live users" is a very different place than "a proposal behind a flag," which is where this was six months ago.
+
+## The API moved from navigator to document
+
+WebMCP's tool-registration getter moved from`navigator.modelContext` to`document.modelContext`, and Chrome 150 deprecated the old name. Anyone who learned this API in the first half of 2026 learned a name that is now on its way out, and the change is easy to miss because the old name still runs.
+
+The Web Machine Learning Community Group moved the getter from`Navigator` to`Document` in the May 27, 2026 spec draft, on the reasoning that tools belong to a specific page rather than to the browser. Google's own WebMCP guidance now marks the old name "`navigator.modelContext`(deprecated in Chromium 150)" and documents`document.modelContext.registerTool()` as the way to define tools.
+
+I found out the way most people will. Testing WebMCP on allbirds.com on August 6, 2026, I called the API using`navigator.modelContext`, the name from the original draft, and Chrome answered with a deprecation warning pointing at`document.modelContext` instead. Nothing failed. The call worked, and the only signal that anything had changed was a warning I would have missed if I had not been reading the console.
+
+The short history, because the name has moved twice:
+
+| Name | Status |
+| --- | --- |
+| `window.agent` | The original proposal. Never released under this name |
+| `navigator.modelContext` | Live in early Chrome builds. Deprecated as of Chrome 150.0.7861.0, will be removed in a future release |
+| `document.modelContext` | The current, canonical location |
+
+The old name has not been switched off. It survives as a deprecated alias, which is exactly why the change is easy to miss: existing code keeps working, and nothing breaks on the day the name changes. That is also why so much of what was written about WebMCP in the first half of 2026, including earlier versions of this article, teaches an API name that is now on its way out.
+
+If you want code that works across both, feature-detect rather than picking one:
+
+```
+const modelContext = document.modelContext || navigator.modelContext
+
+```
+
+The methods are unchanged:`registerTool()` to add a tool,`getTools()` to see what a page has registered,`executeTool()` to run one.
+
+## WebMCP vs MCP vs llms.txt
+
+Three agent-facing standards get confused constantly because the acronyms look alike. They answer different questions:
+
+| | What it is | Runs where | What it tells the agent | Status (August 2026) |
+| --- | --- | --- | --- | --- |
+| MCP | Model Context Protocol | Server / backend | Which tools your backend exposes to an AI system | Established, widely adopted |
+| WebMCP | Web Model Context Protocol | Client-side, in the browser tab | What your website can do, as callable tools | Origin trial from Chrome 149, and default-on across Shopify's Liquid storefronts and any Cloudflare-fronted website since August 2026 |
+| llms.txt | A text file at`/llms.txt` | A static file on your website | Who you are, a curated map of your content | Proposed, contested (Mueller: "purely speculative for now") |
+
+The short version: MCP connects agents to your back end, llms.txt describes your identity to agents, and WebMCP exposes your capabilities to agents in the browser. WebMCP and llms.txt are the two competing bets on the agentic web, identity versus capability, and that split is worth its own article. (Companion piece coming: llms.txt vs WebMCP, the identity bet vs the capability bet.)
+
+## Which browsers support WebMCP?
+
+| Browser | WebMCP support (August 2026) |
+| --- | --- |
+| Google Chrome 149-156 | Public origin trial (opt-in, production-eligible).`navigator.modelContext` deprecated in Chrome 150 |
+| Microsoft Edge | Microsoft co-authored the spec, but WebMCP is not listed in Edge's official 147 release notes, availability unconfirmed |
+| Mozilla Firefox | No public signal yet |
+| Apple Safari | No public signal yet |
+
+## What this means for website owners
+
+Websites are heading toward two interfaces: a visual one for humans and a structured tool surface for agents. A public origin trial already live in Chrome, and a standard co-authored by Microsoft and Google, make that direction hard to bet against.
+
+That's less daunting than it sounds. The declarative form approach means your existing HTML forms can double as agent tools with minimal markup changes. The investment in semantic HTML and accessible forms that I've been writing about pays off once again.
+
+I implemented WebMCP on No Hacks itself, the JavaScript-API way. When a WebMCP-capable browser loads the website, it registers four callable tools through`document.modelContext.registerTool`. Two cover the glossary:`list_terms` to discover every term, and`define_term` to return a canonical definition with its source URL. Two cover the agentic-browser landscape:`list_agentic_browsers` to enumerate every tracked product by category, and`get_browser` for the full detail on one. Each tool reads from the same data file that powers the human-facing page, so an agent and a reader never get different answers, and the agent surface can't drift from the content. I used the imperative JS API rather than the declarative form annotations here because these are lookup tools, not form submissions. Running it on a live website, rather than only writing about it, is the fastest way to find where the rough edges actually are.
+
+The competitive implications are real. Today, when Chrome's auto browse visits your website and your competitor's website, it's guessing at both interfaces equally. Once WebMCP adoption picks up, the website that exposes structured tools gives agents a clear, reliable path to complete their task. The website that doesn't still forces agents to guess. All else being equal, the agent will prefer the path that works. It's cheaper that way.
+
+This is also where Agent Experience Optimization evolves from "make your website accessible to agents" to "design your website's agent interface." Tool naming, schema design, and the quality of your tool descriptions become optimization surfaces. If that sounds familiar, it should. It's the same shift that happened when meta descriptions and structured data became optimization surfaces for search engines.
+
+The web is building a structured layer for agent interaction, and it's building it as an open standard through the W3C. Put the pieces together, MCP for backend tools, A2A for agent communication, NLWeb for website content, and now WebMCP for in-browser tools, and the infrastructure of the agentic web is taking shape, fast. The developers who get familiar with`document.modelContext` during this origin trial will be ready when the standard settles. And the website owners who start thinking about their website's tool surface, not just its visual surface, will be the ones agents prefer when the time comes.
+
+## QUESTIONS ANSWERED
+
+### What is WebMCP?
+
+WebMCP (Web Model Context Protocol) is a proposed open web standard that lets websites expose structured tools directly to in-browser AI agents. Instead of agents scraping the DOM or clicking buttons, websites register tools with defined JSON Schema inputs and outputs that agents can discover and call as functions. It's developed through the W3C Web Machine Learning Community Group and was first announced on February 10, 2026.
+
+### How is WebMCP different from MCP?
+
+MCP (Model Context Protocol) runs server-side, requiring developers to deploy tools on backend infrastructure. WebMCP runs client-side in the browser, using JavaScript functions or annotated HTML forms. Your website becomes the MCP server, with tools defined and executed right in the browser tab, no separate server required.
+
+### How is WebMCP different from llms.txt?
+
+They answer different questions. llms.txt is a static file that describes who you are, a map of your content for AI models. WebMCP exposes what your website can do, callable tools an agent can invoke in the browser. llms.txt is the identity bet, WebMCP is the capability bet. In June 2026 Google's John Mueller called llms.txt "purely speculative for now" and pointed developers toward WebMCP instead.
+
+### When was WebMCP announced, and where does it stand now?
+
+WebMCP was first announced on February 10, 2026 and entered a Chrome 149 origin trial in June. In August 2026 Shopify switched it on for every Liquid storefront and Cloudflare made it available to any website behind Cloudflare with no code change, so a large share of the commerce web now exposes tools by default. Gemini in Chrome remains the main agent calling them.
+
+### Is it navigator.modelContext or document.modelContext?
+
+Use document.modelContext. The W3C spec draft moved the getter from Navigator to Document on May 27, 2026, and Google's WebMCP guidance marks navigator.modelContext deprecated in Chromium 150, to be removed in a future release. The old name survives as a deprecated alias, which is why the change is easy to miss: existing code keeps working. For code that spans both, feature-detect with document.modelContext || navigator.modelContext.
+
+### How do I enable WebMCP in Chrome?
+
+With Chrome 149, WebMCP is available through a public origin trial. Register your origin in the Chrome Origin Trials console to run it on real users, or enable "Experimental Web Platform features" at chrome://flags to test locally. Earlier builds required the flag only; the origin trial is the new path.
+
+### Will WebMCP work in Firefox and Safari?
+
+WebMCP is being developed as an open web standard through the W3C, not a Chrome-exclusive feature, and Microsoft co-authored it. As of June 2026 it isn't listed in Microsoft Edge's official 147 release notes (despite secondary claims of native Edge support), and there are no public signals from Mozilla (Firefox) or Apple (Safari). Chrome's origin trial is the only confirmed place to run it today.
+
+## RELATED EPISODES
+
+### A Shoe Company And A Cookie Company Now Say The Exact Same Thing To AI Agents
+
+### Does llms.txt Work? What 137,000 Domains' Server Logs Show
+
+### OpenAI Killed Its AI Browser
+
+## MORE ARTICLES
+
+### MCP, A2A, WebMCP, NLWeb, and AGENTS.md: The Standards Powering the Agentic Web
+
+### How AI Agents See Your Website (And How to Build for Them)
