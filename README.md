@@ -1,4 +1,4 @@
-# Wildcat Mission Planner
+# Mission Planner
 
 A **WebMCP-powered campus concierge** for SJSU students. Enter trip constraints (start, destination, available minutes, errands). An AI agent inspects context, searches sample campus places, drafts an optimized walking route, and returns map links — while **you** keep approval control.
 
