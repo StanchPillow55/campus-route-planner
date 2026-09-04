@@ -8,9 +8,12 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 43123,
+    // Allow ephemeral HTTPS tunnels (localhost.run / Cloudflare) for judge demos
+    allowedHosts: true,
   },
   preview: {
     host: '0.0.0.0',
     port: 43123,
+    allowedHosts: true,
   },
 })
